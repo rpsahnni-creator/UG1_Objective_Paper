@@ -90,6 +90,20 @@ export const t: Dict = {
   logout: { en: "Logout", hi: "लॉगआउट" },
   admin_tag: { en: "Admin", hi: "व्यवस्थापक" },
   tap_option_hint: { en: "Tap any option — explanation will appear.", hi: "किसी विकल्प पर टैप करें — व्याख्या दिखेगी।" },
+  daily_practice: { en: "Daily Practice", hi: "दैनिक अभ्यास" },
+  daily_practice_sub: { en: "10 mixed questions from all units", hi: "सभी इकाइयों से 10 मिश्रित प्रश्न" },
+  completed_today: { en: "Completed Today", hi: "आज पूर्ण हुआ" },
+  start: { en: "Start", hi: "शुरू करें" },
+  bookmarks: { en: "Bookmarks", hi: "बुकमार्क" },
+  no_bookmarks: {
+    en: "No bookmarks yet. Tap the bookmark icon on any topic to save it here.",
+    hi: "अभी कोई बुकमार्क नहीं है। किसी विषय को यहाँ सहेजने के लिए बुकमार्क आइकन पर टैप करें।",
+  },
+  not_started: { en: "Not started", hi: "शुरू नहीं हुआ" },
+  best_label: { en: "Best", hi: "सर्वश्रेष्ठ" },
+  attempts_label: { en: "attempts", hi: "प्रयास" },
+  daily_result_badge: { en: "Daily Practice Result", hi: "दैनिक अभ्यास परिणाम" },
+  your_progress: { en: "Your Progress", hi: "आपकी प्रगति" },
 };
 
 export const tr = (key: keyof typeof t, lang: Lang) => t[key]?.[lang] ?? key;

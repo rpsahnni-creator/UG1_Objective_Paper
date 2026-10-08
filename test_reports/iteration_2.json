@@ -1,0 +1,57 @@
+{
+  "summary": "Tested 3 NEW features (Progress Ring, Bookmarks, Daily Practice) on top of previously-passing core app. Backend: 31/32 pytest passed (97%) - found 1 CRITICAL data integrity bug causing incorrect quiz scoring for unit2/unit3 (and therefore Daily Practice). Frontend: Bookmark add/list/navigate-with-scroll/delete all work correctly; Daily Practice full flow works (10 mixed questions, correct 'Daily Practice Result' title, 'Completed Today • X%' badge appears on dashboard). Progress Ring feature is functionally correct (0% -> best% after quiz) BUT triggers a full-screen blocking React Native Web dev error overlay whenever any chapter has best_percent > 0, due to an invalid SVG prop in ProgressRing.tsx.",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "/api/quiz/submit, /api/daily-practice, /api/progress (indirectly)",
+        "issue": "db.mcqs collection contains duplicate 'id' values with DIFFERENT answer_index for the SAME id, for chapters unit2 (199 docs / only 126 unique ids) and unit3 (283 docs / only 122 unique ids). Root cause: startup seeding logic only seeds 'if await db.mcqs.count_documents({}) == 0', and assigns id = f\"{chapter_id}-{i+1:04d}\" using a GLOBAL enumerate index over content/mcq_bank.py's MCQS list. Across multiple app revisions the MCQS list size changed (current content/mcq_bank.py has only 137 total Qs: unit1=51, unit2=47, unit3=39) while the live Mongo DB still holds 653 stale docs from an older, larger content file (because the 'count==0' guard skipped re-seeding, leaving old+new ids collide on unit2/unit3 boundaries). Verified independently via script: GET /api/chapters/unit3/mcqs?limit=10000 -> 283 docs but only 122 unique ids; e.g. id 'unit3-0084' exists twice with answer_index=2 and answer_index=0 simultaneously; id 'unit3-0136' exists 3 times with answer_index 3, 0, 1. In /api/quiz/submit, 'answer_map = {d['id']: d['answer_index'] for d in docs}' silently overwrites with whichever duplicate Mongo returns last, so the SAME question_id can be scored against the WRONG correct answer depending on Mongo's internal return order. Reproduced deterministically: submitted a Daily Practice attempt where every answer sent equaled the answer_index shown to the user in the generated question (100% expected) but server scored it 60% because 2 of 10 picked unit3 questions had their correct_index resolve to None (id not found in the $in-queried docs set) and others resolved to a different answer_index than what was served.",
+        "priority": "CRITICAL"
+      }
+    ],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "src/components/ProgressRing.tsx (line ~32-44)",
+        "issue": "The second (progress) <Circle> uses `rotation=\"-90\"` with `origin={`${size/2}, ${size/2}`}`. On React Native Web (react-native-svg web renderer), this throws a console error 'Invalid DOM property `transform-origin`. Did you mean `transformOrigin`?' which triggers Expo's full-screen LogBox error overlay in the web preview, completely covering the screen and blocking all taps underneath (dashboard, daily-practice-card, chapter cards, bookmarks-btn all became unreachable until overlay dismissed). This only fires once ANY chapter progress best_percent > 0 (i.e. clamped > 0 branch that renders the colored Circle). Reproduced reliably: completed a unit1 quiz -> navigated back to dashboard -> full red/dark LogBox overlay appeared citing 'ProgressRing.tsx:32:11'.",
+        "testID": "progress-unit1 / dashboard",
+        "priority": "CRITICAL"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {
+        "component": "ProgressRing.tsx",
+        "issue": "Use SVG-valid rotation syntax instead of the `origin` prop, e.g. `transform={`rotate(-90 ${size/2} ${size/2})`}` on the <Circle>, to avoid the web DOM-property warning/crash overlay. Needed for Progress Ring (Feature 1) to be usable at all once a user has any score > 0%."
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_new_features.py",
+    "/app/test_reports/pytest/pytest_results_iter2.xml"
+  ],
+  "action_items": [
+    "CRITICAL: Fix ProgressRing.tsx SVG rotation (remove `origin`/`rotation` props, use `transform=\"rotate(-90 cx cy)\"`) — currently blocks the entire dashboard with a dev error overlay as soon as any quiz is completed.",
+    "CRITICAL: Fix MCQ seeding/data integrity for unit2 & unit3 — duplicate 'id' strings map to different questions/answer_index in MongoDB (unit2: 199 docs/126 unique ids, unit3: 283 docs/122 unique ids). Recommend: drop and reseed db.mcqs on startup (or upsert by id, or seed based on content hash instead of count==0 check) so quiz scoring and Daily Practice are accurate for unit2/unit3. This also affects the pre-existing (previously passed) quiz/progress flows for unit2 and unit3, not just the 3 new features.",
+    "After fixing above, re-run backend/tests/test_new_features.py::TestDailyPractice::test_daily_status_completed_after_submit to confirm 100% scoring works when all correct answers are submitted."
+  ],
+  "critical_code_review_comments": [
+    "server.py startup seeding (`if await db.mcqs.count_documents({}) == 0`) is non-idempotent against content changes — any future edit to content/mcq_bank.py will not reflect in DB and can reintroduce duplicate/stale-id collisions exactly like the one found here.",
+    "quiz/submit's answer_map dict-comprehension silently masks duplicate-id data corruption instead of failing loudly; consider asserting len(docs) == len(set(qids)) or using find_one per id to surface such issues earlier.",
+    "ProgressRing.tsx would benefit from a web-safe transform approach regardless of the current bug, since `origin`+`rotation` string props on react-native-svg are primarily meant for native and are inconsistently supported on web."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_new_features.py (new - 15 tests for Progress, Bookmarks, Daily Practice)"
+  ],
+  "success_rate": {
+    "backend": "97% (31/32 total incl. pre-existing suite; 14/15 new-feature tests passed)",
+    "frontend": "Bookmarks 100% functional (add/list/navigate+scroll/delete all verified). Daily Practice 100% functional (quiz load, result title, completed badge). Progress Ring functionally updates 0%->best% correctly but is blocked by a critical web rendering crash as soon as percent > 0."
+  },
+  "seed_data_creation": "Created TEST_-prefixed bookmarks during testing which were cleaned up via class-scoped fixture teardown (deleted unit1/0 and unit2/1 bookmarks). No other seed data created.",
+  "retest_needed": true,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "BASE_URL for all testing = https://it-course-app.preview.emergentagent.com (from frontend/.env EXPO_PUBLIC_BACKEND_URL; note review request mentioned EXPO_BACKEND_URL but actual frontend code/env var used is EXPO_PUBLIC_BACKEND_URL). New testIDs verified working: daily-practice-card, daily-completed-badge, bookmarks-btn, bookmarks-title, bookmark-item-{id}, remove-bookmark-{id}, bookmark-btn-{index}, progress-{chapterId}. Two CRITICAL bugs must be fixed before re-test: (1) ProgressRing SVG origin/rotation prop crashes web preview once any chapter has score>0 — reproduce by completing any chapter quiz then returning to dashboard; (2) duplicate MCQ ids in Mongo for unit2/unit3 cause wrong-answer scoring — reproduce via GET /api/chapters/unit3/mcqs?limit=10000 and count unique ids vs total (122 vs 283). After backend fix, must also verify db.mcqs truly resets (may need to manually drop the collection once since the current seeding guard won't auto-fix existing stale/duplicate data even after code fix, since collection is already non-empty).",
+  "rca_of_issue": "Bug 1 (ProgressRing crash): react-native-svg's <Circle rotation='-90' origin='cx, cy' /> renders on web as raw DOM attributes; React DOM warns 'transform-origin' is not camelCase and Expo's dev LogBox intercepts this console.error into a full-screen blocking overlay, only triggered when the progress arc Circle is rendered (clamped > 0 branch). Fix: replace rotation/origin props with `transform={`rotate(-90 ${size/2} ${size/2})`}` on the Circle, which is valid SVG and avoids the DOM property mismatch. Bug 2 (duplicate MCQ ids / wrong scoring): startup only seeds MCQs `if count_documents({}) == 0`; the live DB still has 653 docs seeded from an older/larger version of content/mcq_bank.py, while current source file only defines 137 questions (51/47/39 per unit). Because ids are assigned via a GLOBAL enumerate index (not per-chapter), stale and current rows collide on the same id string for unit2/unit3 with differing answer_index, so /api/quiz/submit's id->answer lookup returns inconsistent/wrong correct answers for ~45% of unit2 questions and ~57% of unit3 questions. Fix: make seeding idempotent/replace-based (e.g., drop db.mcqs and reinsert on every startup, or upsert by id derived deterministically from question content rather than a shifting global index) and manually clear existing stale duplicate data in the current DB."
+}

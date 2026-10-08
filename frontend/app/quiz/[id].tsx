@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View,
 } from "react-native";
@@ -31,10 +31,19 @@ export default function Quiz() {
   const router = useRouter();
   const { lang } = useLang();
   const { session } = useAuth();
+  const qc = useQueryClient();
+
+  const isDaily = id === "daily";
 
   const q = useQuery<MCQ[]>({
     queryKey: ["mcqs", id],
-    queryFn: () => apiGet<MCQ[]>(`/api/chapters/${id}/mcqs?limit=50`, session?.token),
+    queryFn: async () => {
+      if (isDaily) {
+        const res = await apiGet<{ date: string; questions: MCQ[] }>("/api/daily-practice", session?.token);
+        return res.questions;
+      }
+      return apiGet<MCQ[]>(`/api/chapters/${id}/mcqs?limit=50`, session?.token);
+    },
     enabled: !!id,
   });
 
@@ -61,6 +70,8 @@ export default function Quiz() {
         { chapter_id: id, answers },
         session?.token,
       );
+      qc.invalidateQueries({ queryKey: ["progress"] });
+      qc.invalidateQueries({ queryKey: ["daily-status"] });
       router.replace({
         pathname: "/quiz-result",
         params: {

@@ -1,13 +1,13 @@
-import { useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Feather from "@react-native-vector-icons/feather";
 
-import { apiGet, useAuth } from "@/src/auth";
+import { apiDelete, apiGet, apiPost, useAuth } from "@/src/auth";
 import { useLang, tr } from "@/src/i18n";
 import { LangToggle } from "@/src/LangToggle";
 import { colors, radius, spacing } from "@/src/theme-exports";
@@ -15,14 +15,19 @@ import { colors, radius, spacing } from "@/src/theme-exports";
 type Section = { heading_en: string; heading_hi: string; body_en: string; body_hi: string };
 type Material = { chapter_id: string; title_en: string; title_hi: string; sections: Section[] };
 type Chapter = { id: string; name_en: string; name_hi: string; question_count: number };
+type Bookmark = { id: string; chapter_id: string; section_index: number };
 
 export default function ChapterDetail() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, section } = useLocalSearchParams<{ id: string; section?: string }>();
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { lang } = useLang();
   const { session } = useAuth();
+  const qc = useQueryClient();
   const [tab, setTab] = useState<"study" | "quiz">("study");
+  const scrollRef = useRef<ScrollView>(null);
+  const sectionY = useRef<number[]>([]);
+  const [scrolledToSection, setScrolledToSection] = useState(false);
 
   const chapterQ = useQuery<Chapter[]>({
     queryKey: ["chapters"],
@@ -35,6 +40,51 @@ export default function ChapterDetail() {
     queryFn: () => apiGet<Material>(`/api/chapters/${id}/study-material`, session?.token),
     enabled: !!id,
   });
+
+  const bookmarksQ = useQuery<Bookmark[]>({
+    queryKey: ["bookmarks"],
+    queryFn: () => apiGet<Bookmark[]>("/api/bookmarks", session?.token),
+    enabled: !!session?.token,
+  });
+
+  const bookmarkedSet = useMemo(
+    () => new Set((bookmarksQ.data ?? []).filter((b) => b.chapter_id === id).map((b) => b.section_index)),
+    [bookmarksQ.data, id],
+  );
+
+  const addBookmarkMut = useMutation({
+    mutationFn: (payload: { chapter_id: string; section_index: number; heading_en: string; heading_hi: string }) =>
+      apiPost("/api/bookmarks", payload, session?.token),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["bookmarks"] }),
+  });
+  const removeBookmarkMut = useMutation({
+    mutationFn: (sectionIndex: number) => apiDelete(`/api/bookmarks/${id}/${sectionIndex}`, session?.token),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["bookmarks"] }),
+  });
+
+  const toggleBookmark = (idx: number, s: Section) => {
+    if (bookmarkedSet.has(idx)) {
+      removeBookmarkMut.mutate(idx);
+    } else {
+      addBookmarkMut.mutate({ chapter_id: String(id), section_index: idx, heading_en: s.heading_en, heading_hi: s.heading_hi });
+    }
+  };
+
+  const sectionParam = section !== undefined ? parseInt(section, 10) : undefined;
+
+  useEffect(() => {
+    if (sectionParam !== undefined && !Number.isNaN(sectionParam) && matQ.data && !scrolledToSection) {
+      setTab("study");
+      const timer = setTimeout(() => {
+        const y = sectionY.current[sectionParam];
+        if (y !== undefined && scrollRef.current) {
+          scrollRef.current.scrollTo({ y: Math.max(y - 16, 0), animated: true });
+        }
+        setScrolledToSection(true);
+      }, 350);
+      return () => clearTimeout(timer);
+    }
+  }, [sectionParam, matQ.data, scrolledToSection]);
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
@@ -77,17 +127,35 @@ export default function ChapterDetail() {
 
       {tab === "study" ? (
         <ScrollView
+          ref={scrollRef}
           contentContainerStyle={{
             paddingHorizontal: spacing.xl, paddingBottom: insets.bottom + spacing.xxl,
           }}
         >
           {matQ.isLoading && <ActivityIndicator color={colors.brand} style={{ marginTop: 32 }} />}
-          {matQ.data?.sections.map((s, i) => (
-            <View key={i} style={styles.section}>
-              <Text style={styles.sectionHeading}>{lang === "en" ? s.heading_en : s.heading_hi}</Text>
-              <Text style={styles.sectionBody}>{lang === "en" ? s.body_en : s.body_hi}</Text>
-            </View>
-          ))}
+          {matQ.data?.sections.map((s, i) => {
+            const bookmarked = bookmarkedSet.has(i);
+            return (
+              <View
+                key={i}
+                style={styles.section}
+                onLayout={(e) => { sectionY.current[i] = e.nativeEvent.layout.y; }}
+              >
+                <View style={styles.sectionHeadRow}>
+                  <Text style={styles.sectionHeading}>{lang === "en" ? s.heading_en : s.heading_hi}</Text>
+                  <Pressable
+                    testID={`bookmark-btn-${i}`}
+                    onPress={() => toggleBookmark(i, s)}
+                    style={styles.bookmarkBtn}
+                    hitSlop={8}
+                  >
+                    <Feather name="bookmark" size={18} color={bookmarked ? colors.brand : colors.muted} />
+                  </Pressable>
+                </View>
+                <Text style={styles.sectionBody}>{lang === "en" ? s.body_en : s.body_hi}</Text>
+              </View>
+            );
+          })}
         </ScrollView>
       ) : (
         <View style={styles.quizPane}>
@@ -141,9 +209,17 @@ const styles = StyleSheet.create({
   tabTxt: { color: colors.onSurface, fontWeight: "600", fontSize: 13 },
   tabTxtActive: { color: colors.onBrand },
   section: { marginTop: spacing.xl },
+  sectionHeadRow: {
+    flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between",
+    gap: spacing.sm, marginBottom: spacing.sm,
+  },
   sectionHeading: {
-    fontSize: 18, fontWeight: "700", color: colors.onSurface, marginBottom: spacing.sm,
-    lineHeight: 26,
+    fontSize: 18, fontWeight: "700", color: colors.onSurface,
+    lineHeight: 26, flex: 1,
+  },
+  bookmarkBtn: {
+    width: 32, height: 32, borderRadius: 16, alignItems: "center", justifyContent: "center",
+    backgroundColor: colors.surfaceTertiary,
   },
   sectionBody: {
     fontSize: 15, color: colors.onSurface, lineHeight: 24, opacity: 0.92,

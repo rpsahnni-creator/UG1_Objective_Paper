@@ -8,6 +8,7 @@ import sys
 import logging
 import jwt
 import uuid
+import random
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional, Literal
@@ -103,6 +104,45 @@ class QuizResult(BaseModel):
     taken_at: datetime
 
 
+class ProgressOut(BaseModel):
+    chapter_id: str
+    attempts: int
+    best_percent: float
+    last_percent: float
+    last_taken_at: Optional[datetime] = None
+
+
+class BookmarkIn(BaseModel):
+    chapter_id: str
+    section_index: int
+    heading_en: str
+    heading_hi: str
+
+
+class BookmarkOut(BaseModel):
+    id: str
+    chapter_id: str
+    chapter_name_en: str
+    chapter_name_hi: str
+    section_index: int
+    heading_en: str
+    heading_hi: str
+    created_at: datetime
+
+
+class DailyPracticeOut(BaseModel):
+    date: str
+    questions: List[MCQOut]
+
+
+class DailyStatusOut(BaseModel):
+    date: str
+    completed: bool
+    percent: Optional[float] = None
+    correct: Optional[int] = None
+    total: Optional[int] = None
+
+
 # -------- Chapter metadata --------
 CHAPTERS_META = {
     "unit1": {
@@ -137,12 +177,16 @@ async def startup():
         await db.study_material.update_one(
             {"chapter_id": mat["chapter_id"]}, {"$set": mat}, upsert=True
         )
-    # MCQs: seed only once (keep stable ids by content hash-ish via chapter+idx)
+    # MCQs: seed only once (keep stable ids via a PER-CHAPTER counter so ids
+    # never collide across chapters even if the content list order changes)
     if await db.mcqs.count_documents({}) == 0:
         docs = []
-        for i, q in enumerate(MCQS):
+        counters: dict = {}
+        for q in MCQS:
+            cid = q["chapter_id"]
+            counters[cid] = counters.get(cid, 0) + 1
             d = dict(q)
-            d["id"] = f"{q['chapter_id']}-{i+1:04d}"
+            d["id"] = f"{cid}-{counters[cid]:04d}"
             docs.append(d)
         if docs:
             await db.mcqs.insert_many(docs)
@@ -258,6 +302,123 @@ async def submit_quiz(body: QuizSubmit, user: dict = Depends(current_user)):
     await db.quiz_results.insert_one(dict(result))
     result.pop("_id", None)
     return result
+
+
+# -------- Progress --------
+@api.get("/progress", response_model=List[ProgressOut])
+async def get_progress(user: dict = Depends(current_user)):
+    docs = await db.quiz_results.find(
+        {"email": user["email"], "chapter_id": {"$in": list(CHAPTERS_META.keys())}},
+        {"_id": 0, "chapter_id": 1, "percent": 1, "taken_at": 1},
+    ).sort("taken_at", 1).to_list(length=10000)
+    agg: dict = {}
+    for d in docs:
+        cid = d["chapter_id"]
+        cur = agg.setdefault(cid, {"attempts": 0, "best_percent": 0.0, "last_percent": 0.0, "last_taken_at": None})
+        cur["attempts"] += 1
+        cur["best_percent"] = max(cur["best_percent"], d["percent"])
+        cur["last_percent"] = d["percent"]
+        cur["last_taken_at"] = d["taken_at"]
+    return [ProgressOut(chapter_id=cid, **vals) for cid, vals in agg.items()]
+
+
+# -------- Bookmarks --------
+@api.post("/bookmarks", response_model=BookmarkOut)
+async def add_bookmark(body: BookmarkIn, user: dict = Depends(current_user)):
+    meta = CHAPTERS_META.get(body.chapter_id)
+    if not meta:
+        raise HTTPException(status_code=404, detail="Chapter not found")
+    existing = await db.bookmarks.find_one({
+        "email": user["email"], "chapter_id": body.chapter_id, "section_index": body.section_index,
+    })
+    if existing:
+        return BookmarkOut(
+            id=existing["id"], chapter_id=existing["chapter_id"],
+            chapter_name_en=meta["name_en"], chapter_name_hi=meta["name_hi"],
+            section_index=existing["section_index"], heading_en=existing["heading_en"],
+            heading_hi=existing["heading_hi"], created_at=existing["created_at"],
+        )
+    doc = {
+        "id": str(uuid.uuid4()),
+        "email": user["email"],
+        "chapter_id": body.chapter_id,
+        "section_index": body.section_index,
+        "heading_en": body.heading_en,
+        "heading_hi": body.heading_hi,
+        "created_at": datetime.now(timezone.utc),
+    }
+    await db.bookmarks.insert_one(dict(doc))
+    return BookmarkOut(
+        id=doc["id"], chapter_id=doc["chapter_id"],
+        chapter_name_en=meta["name_en"], chapter_name_hi=meta["name_hi"],
+        section_index=doc["section_index"], heading_en=doc["heading_en"],
+        heading_hi=doc["heading_hi"], created_at=doc["created_at"],
+    )
+
+
+@api.get("/bookmarks", response_model=List[BookmarkOut])
+async def list_bookmarks(user: dict = Depends(current_user)):
+    docs = await db.bookmarks.find({"email": user["email"]}, {"_id": 0}).sort("created_at", -1).to_list(length=1000)
+    out = []
+    for d in docs:
+        meta = CHAPTERS_META.get(d["chapter_id"], {})
+        out.append(BookmarkOut(
+            id=d["id"], chapter_id=d["chapter_id"],
+            chapter_name_en=meta.get("name_en", d["chapter_id"]),
+            chapter_name_hi=meta.get("name_hi", d["chapter_id"]),
+            section_index=d["section_index"], heading_en=d["heading_en"], heading_hi=d["heading_hi"],
+            created_at=d["created_at"],
+        ))
+    return out
+
+
+@api.delete("/bookmarks/{chapter_id}/{section_index}")
+async def delete_bookmark(chapter_id: str, section_index: int, user: dict = Depends(current_user)):
+    await db.bookmarks.delete_one(
+        {"email": user["email"], "chapter_id": chapter_id, "section_index": section_index}
+    )
+    return {"ok": True}
+
+
+# -------- Daily Practice --------
+def _today_str() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+
+async def _build_daily_questions(date_str: str):
+    rng = random.Random(date_str)
+    chapter_ids = list(CHAPTERS_META.keys())
+    splits = [4, 3, 3]
+    selected = []
+    for cid, n in zip(chapter_ids, splits):
+        docs = await db.mcqs.find({"chapter_id": cid}, {"_id": 0}).to_list(length=10000)
+        if not docs:
+            continue
+        k = min(n, len(docs))
+        selected.extend(rng.sample(docs, k))
+    rng.shuffle(selected)
+    return selected
+
+
+@api.get("/daily-practice", response_model=DailyPracticeOut)
+async def daily_practice():
+    date_str = _today_str()
+    questions = await _build_daily_questions(date_str)
+    return DailyPracticeOut(date=date_str, questions=[MCQOut(**q) for q in questions])
+
+
+@api.get("/daily-practice/status", response_model=DailyStatusOut)
+async def daily_practice_status(user: dict = Depends(current_user)):
+    date_str = _today_str()
+    start = datetime.strptime(date_str, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+    end = start + timedelta(days=1)
+    doc = await db.quiz_results.find(
+        {"email": user["email"], "chapter_id": "daily", "taken_at": {"$gte": start, "$lt": end}},
+    ).sort("taken_at", -1).to_list(length=1)
+    if not doc:
+        return DailyStatusOut(date=date_str, completed=False)
+    d = doc[0]
+    return DailyStatusOut(date=date_str, completed=True, percent=d["percent"], correct=d["correct"], total=d["total"])
 
 
 app.include_router(api)

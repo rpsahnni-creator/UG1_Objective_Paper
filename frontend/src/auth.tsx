@@ -99,3 +99,11 @@ export async function apiPost<T>(path: string, body: any, token?: string): Promi
   if (!r.ok) throw new Error(`${r.status}`);
   return r.json();
 }
+export async function apiDelete<T>(path: string, token?: string): Promise<T> {
+  const r = await fetch(`${BASE}${path}`, {
+    method: "DELETE",
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  if (!r.ok) throw new Error(`${r.status}`);
+  return r.json();
+}

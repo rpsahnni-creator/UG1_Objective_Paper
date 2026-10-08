@@ -1,0 +1,35 @@
+{
+  "summary": "RETEST of 2 CRITICAL bugs from iteration_2 (ProgressRing crash + duplicate MCQ ids). BOTH FIXES VERIFIED WORKING. Backend: 38/38 pytest passing (100%), up from 31/32 - added 6 new regression tests confirming unit1/unit2/unit3 all have unique MCQ ids (171/199/283) and all score 100% when all-correct answers submitted. Frontend: completed a real 50-question quiz for UNIT-II in the browser (random first-option answers, scored 4% = 2/50, matching the actual choices made - no corruption), returned to dashboard - Progress Ring rendered 'Best 4%' correctly with NO crash overlay and dashboard remained fully interactive (daily-practice-card, other chapter cards still tappable). Daily Practice: completed full 10-question flow, got consistent 40% (4/10, matching actual clicks - previously this path was corrupted to 60% with nulls), 'Completed Today • 40%' badge appeared correctly on dashboard. Bookmarks smoke test: toggle/list/delete all passed.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_new_features.py",
+    "/app/backend/tests/test_api.py",
+    "/app/test_reports/pytest/pytest_results_iter3.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Both previously-reported bugs confirmed fixed: ProgressRing.tsx now uses valid SVG transform=\"rotate(-90 cx cy)\" instead of rotation/origin props; db.mcqs ids are now unique per chapter (171/199/283, verified via GET /api/chapters/{id}/mcqs?limit=10000).",
+    "server.py startup seeding fix (per-chapter counters) is good future-proofing, though as noted by main agent this path doesn't currently execute since collection is non-empty - low risk, no action needed now."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_new_features.py (added TestMcqIdIntegrity class: 6 new regression tests for mcq-id-uniqueness + full-chapter all-correct=100% scoring, using an isolated guest token to avoid polluting the shared TestProgress fixture state)"
+  ],
+  "success_rate": {
+    "backend": "100% (38/38)",
+    "frontend": "100% for all retested flows: Progress Ring (no crash, correct % display, dashboard stays interactive), Daily Practice (consistent/accurate scoring + completed badge), Bookmarks (toggle/list/delete)"
+  },
+  "seed_data_creation": "None persisted - test-created bookmark (UNIT-I section 0) was deleted during the smoke test itself. Guest-session quiz/daily-practice attempts created during testing are normal user data (guest tokens, no cleanup needed/possible for anonymous guest progress).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Both critical bugs from iteration_2 are confirmed fixed and verified independently (not just trusting main agent's claims) via live pytest run + live browser automation against https://it-course-app.preview.emergentagent.com. No further action needed on these two issues. App is in a good state: core quiz flow, study material, language toggle, admin/guest auth, progress tracking, bookmarks, and daily practice are all working end-to-end.",
+  "rca_of_issue": "N/A - this is a retest confirming prior fixes, no new RCA needed. Both root causes described in iteration_2.json (invalid SVG rotation/origin prop on web; non-idempotent count==0 seeding guard causing stale duplicate mcq ids) were correctly addressed by the fixes described in the review request."
+}

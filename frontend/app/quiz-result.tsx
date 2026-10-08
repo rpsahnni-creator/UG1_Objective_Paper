@@ -38,7 +38,9 @@ export default function QuizResult() {
           </View>
         </View>
 
-        <Text testID="result-title" style={styles.title}>{tr("your_score", lang)}</Text>
+        <Text testID="result-title" style={styles.title}>
+          {p.chapter_id === "daily" ? tr("daily_result_badge", lang) : tr("your_score", lang)}
+        </Text>
         <Text testID="result-percent" style={[styles.percent, { color: pass ? colors.success : colors.error }]}>
           {percent}%
         </Text>
