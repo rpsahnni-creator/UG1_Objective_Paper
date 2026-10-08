@@ -1,0 +1,37 @@
+{
+  "summary": "Tested NEW AEC Hindi Grammar course feature + full regression on existing SEC course. Backend: 18/18 new AEC-specific pytest tests passing + full suite 56/56 (100%) including all 3 other AEC sample topics scoring 100% on all-correct submit, and a global uniqueness check across all 457 AEC MCQ ids (no duplicate-id bug, unlike the previously-fixed SEC issue). Frontend: AEC tab renders stats (25 topics, 457 questions) and 2 unit-grouped lists (13+12) correctly; opened 3 topics (sandhi, muhavare, nibandh-paryavaran) - all rich content blocks (definition box, table, paragraphs, CTA) rendered correctly with proper Hindi text; completed a full 7-question quiz for nibandh-paryavaran via the shared quiz engine, got accurate 29% (2/7) matching the actual picks made (no scoring corruption) and landed on quiz-result screen correctly; returned to dashboard, SEC tab/chapters/progress-rings/daily-practice-card all rendered and worked normally (regression pass). Rapid SEC<->AEC tab switching (6 cycles) produced no crash and no stale data mixing - re-opening AEC tab after visiting a SEC chapter screen still showed correct AEC data.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_aec_course.py",
+    "/app/test_reports/pytest/pytest_aec_course.xml",
+    "/app/test_reports/pytest/pytest_results_iter4.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "AEC MCQ ids use a global incrementing numeric suffix format 'mcq-it-course-app-{n}' (confirmed via sample fetch) which avoids the earlier per-chapter-counter collision bug class entirely - good design choice reusing a single shared counter at content-generation time rather than per-chapter.",
+    "server.py AEC seeding on startup uses idempotent upsert (update_one with upsert=True) for both aec_topics and the shared mcqs collection - correctly avoids the non-idempotent count==0 seeding bug pattern that caused the SEC duplicate-id issue previously.",
+    "/api/aec/stats computes mcqs by excluding SEC chapter ids + 'daily' via $nin - this is correct but slightly fragile if a future chapter_id collides with an AEC slug; low risk, no action needed now.",
+    "dashboard.tsx correctly resets courseTab state to default 'sec' on remount (e.g. navigating away and back) rather than persisting AEC tab choice - acceptable default behavior, not a bug."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_aec_course.py (new file: 18 tests covering /api/aec/topics, /api/aec/topics/{slug}, /api/aec/syllabus, /api/aec/stats, shared quiz engine mcq-id-uniqueness + 100% scoring for sandhi + 4 other sampled topics, global 457-mcq uniqueness check, and SEC /api/chapters regression check)"
+  ],
+  "success_rate": {
+    "backend": "100% (56/56 total, 18/18 new AEC-specific)",
+    "frontend": "100% for all tested flows: AEC tab stats/list rendering, 3 topic detail screens (rich content blocks), full quiz completion + accurate scoring + result screen, SEC regression (chapters/progress rings/daily practice), rapid tab-switch stress test (no crash, no stale data)"
+  },
+  "seed_data_creation": "None persisted beyond normal guest quiz-result documents created during testing (guest tokens, no PII, not cleaned up as these are anonymous user data consistent with app design).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "AEC Hindi Grammar course feature is fully working end-to-end on both backend and frontend with zero regressions found on the existing SEC course. All known-passing features (admin login, guest access, SEC study material/quiz/daily-practice/progress-rings/bookmarks) remain intact after light regression checks. No further action needed for this feature; safe to ship.",
+  "rca_of_issue": "N/A - no new bugs found in this iteration. The duplicate-mcq-id bug class previously seen on the SEC course does NOT reproduce on AEC because AEC MCQ ids are generated with a distinct, globally-unique string format at content-authoring time rather than a per-chapter runtime counter, and seeding uses idempotent update_one upserts."
+}

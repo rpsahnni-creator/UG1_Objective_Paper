@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View } from "react-native";
 import { useRouter } from "expo-router";
@@ -37,13 +37,35 @@ type DailyStatus = {
   total?: number;
 };
 
+type AecTopic = {
+  slug: string;
+  unit: number;
+  title: string;
+  subtitle: string;
+  icon?: string;
+  order?: number;
+  question_count: number;
+};
+
+type AecStats = { topics: number; mcqs: number; shorts: number; descriptives: number };
+
+type AecListItem =
+  | { kind: "header"; key: string; unit: number; title: string }
+  | { kind: "topic"; key: string; data: AecTopic };
+
 const ICON_MAP: Record<string, string> = { cpu: "cpu", "hard-drive": "hard-drive", wifi: "wifi" };
+const AEC_ICON_MAP: Record<string, string> = { PenLine: "edit-3", BookOpenText: "book-open" };
+const AEC_UNIT_LABELS: Record<number, string> = {
+  1: "यूनिट 1 • पत्र-लेखन व निबंध",
+  2: "यूनिट 2 • व्याकरण व रचना",
+};
 
 export default function Dashboard() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { lang } = useLang();
   const { session, logout } = useAuth();
+  const [courseTab, setCourseTab] = useState<"sec" | "aec">("sec");
 
   const { data, isLoading, error, refetch } = useQuery<Chapter[]>({
     queryKey: ["chapters"],
@@ -62,11 +84,37 @@ export default function Dashboard() {
     enabled: !!session?.token,
   });
 
+  const aecTopicsQ = useQuery<AecTopic[]>({
+    queryKey: ["aec-topics"],
+    queryFn: () => apiGet<AecTopic[]>("/api/aec/topics"),
+    enabled: courseTab === "aec",
+  });
+
+  const aecStatsQ = useQuery<AecStats>({
+    queryKey: ["aec-stats"],
+    queryFn: () => apiGet<AecStats>("/api/aec/stats"),
+    enabled: courseTab === "aec",
+  });
+
   const progressMap = useMemo(() => {
     const m: Record<string, Progress> = {};
     (progressQ.data ?? []).forEach((p) => { m[p.chapter_id] = p; });
     return m;
   }, [progressQ.data]);
+
+  const aecListData: AecListItem[] = useMemo(() => {
+    const topics = aecTopicsQ.data ?? [];
+    const out: AecListItem[] = [];
+    for (const unit of [1, 2]) {
+      const unitTopics = topics
+        .filter((t) => t.unit === unit)
+        .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+      if (unitTopics.length === 0) continue;
+      out.push({ kind: "header", key: `h-${unit}`, unit, title: AEC_UNIT_LABELS[unit] ?? `यूनिट ${unit}` });
+      unitTopics.forEach((t) => out.push({ kind: "topic", key: t.slug, data: t }));
+    }
+    return out;
+  }, [aecTopicsQ.data]);
 
   const totalQ = (data ?? []).reduce((s, c) => s + c.question_count, 0);
 
@@ -84,103 +132,186 @@ export default function Dashboard() {
         </View>
       </View>
 
-      <FlatList
-        data={data ?? []}
-        keyExtractor={(c) => c.id}
-        contentContainerStyle={{ padding: spacing.xl, paddingBottom: insets.bottom + spacing.xxl }}
-        ListHeaderComponent={
-          <View style={{ marginBottom: spacing.xl }}>
-            <Text style={styles.eyebrow}>{tr("course_overview", lang).toUpperCase()}</Text>
-            <Text testID="dashboard-title" style={styles.title}>
-              {tr("app_title", lang)}
-            </Text>
-            <View style={styles.statRow}>
-              <View style={styles.statChip}>
-                <Text style={styles.statNum}>{data?.length ?? 0}</Text>
-                <Text style={styles.statLbl}>{tr("chapters", lang)}</Text>
-              </View>
-              <View style={styles.statChip}>
-                <Text style={styles.statNum}>{totalQ}</Text>
-                <Text style={styles.statLbl}>{tr("questions_count", lang)}</Text>
-              </View>
-              {session?.isAdmin && (
-                <View style={[styles.statChip, { backgroundColor: colors.brand }]}>
-                  <Feather name="shield" size={14} color={colors.onBrand} />
-                  <Text style={[styles.statLbl, { color: colors.onBrand, marginTop: 2 }]}>
-                    {tr("admin_tag", lang)}
-                  </Text>
-                </View>
-              )}
-            </View>
+      <View style={styles.courseTabRow}>
+        <Pressable
+          testID="course-tab-sec"
+          onPress={() => setCourseTab("sec")}
+          style={[styles.courseTab, courseTab === "sec" && styles.courseTabActive]}
+        >
+          <Text style={[styles.courseTabText, courseTab === "sec" && styles.courseTabTextActive]}>
+            SEC • कंप्यूटर
+          </Text>
+        </Pressable>
+        <Pressable
+          testID="course-tab-aec"
+          onPress={() => setCourseTab("aec")}
+          style={[styles.courseTab, courseTab === "aec" && styles.courseTabActive]}
+        >
+          <Text style={[styles.courseTabText, courseTab === "aec" && styles.courseTabTextActive]}>
+            AEC • हिंदी
+          </Text>
+        </Pressable>
+      </View>
 
-            <Pressable
-              testID="daily-practice-card"
-              style={styles.dailyCard}
-              onPress={() => router.push("/quiz/daily")}
-            >
-              <View style={styles.dailyIconWrap}>
-                <Feather name="zap" size={22} color={colors.brand} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.dailyTitle}>{tr("daily_practice", lang)}</Text>
-                <Text style={styles.dailySub}>{tr("daily_practice_sub", lang)}</Text>
-                {dailyQ.data?.completed && (
-                  <Text testID="daily-completed-badge" style={styles.dailyDone}>
-                    {tr("completed_today", lang)} • {Math.round(dailyQ.data.percent ?? 0)}%
-                  </Text>
+      {courseTab === "sec" ? (
+        <FlatList
+          data={data ?? []}
+          keyExtractor={(c) => c.id}
+          contentContainerStyle={{ padding: spacing.xl, paddingBottom: insets.bottom + spacing.xxl }}
+          ListHeaderComponent={
+            <View style={{ marginBottom: spacing.xl }}>
+              <Text style={styles.eyebrow}>{tr("course_overview", lang).toUpperCase()}</Text>
+              <Text testID="dashboard-title" style={styles.title}>
+                {tr("app_title", lang)}
+              </Text>
+              <View style={styles.statRow}>
+                <View style={styles.statChip}>
+                  <Text style={styles.statNum}>{data?.length ?? 0}</Text>
+                  <Text style={styles.statLbl}>{tr("chapters", lang)}</Text>
+                </View>
+                <View style={styles.statChip}>
+                  <Text style={styles.statNum}>{totalQ}</Text>
+                  <Text style={styles.statLbl}>{tr("questions_count", lang)}</Text>
+                </View>
+                {session?.isAdmin && (
+                  <View style={[styles.statChip, { backgroundColor: colors.brand }]}>
+                    <Feather name="shield" size={14} color={colors.onBrand} />
+                    <Text style={[styles.statLbl, { color: colors.onBrand, marginTop: 2 }]}>
+                      {tr("admin_tag", lang)}
+                    </Text>
+                  </View>
                 )}
               </View>
-              <Feather name="chevron-right" size={20} color={colors.onBrand} />
-            </Pressable>
-          </View>
-        }
-        renderItem={({ item }) => {
-          const prog = progressMap[item.id];
-          return (
-            <Pressable
-              testID={`chapter-card-${item.id}`}
-              style={styles.card}
-              onPress={() => router.push(`/chapter/${item.id}`)}
-            >
-              <View style={styles.iconWrap}>
-                <Feather name={ICON_MAP[item.icon] || "book"} size={24} color={colors.brand} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.cardTitle}>
-                  {lang === "en" ? item.name_en : item.name_hi}
-                </Text>
-                <Text style={styles.cardDesc} numberOfLines={2}>
-                  {lang === "en" ? item.description_en : item.description_hi}
-                </Text>
-                <View style={styles.metaRow}>
-                  <Feather name="list" size={12} color={colors.muted} />
-                  <Text style={styles.meta}>
-                    {item.question_count} {tr("questions_count", lang)}
-                  </Text>
+
+              <Pressable
+                testID="daily-practice-card"
+                style={styles.dailyCard}
+                onPress={() => router.push("/quiz/daily")}
+              >
+                <View style={styles.dailyIconWrap}>
+                  <Feather name="zap" size={22} color={colors.brand} />
                 </View>
-              </View>
-              <View style={styles.progressCol} testID={`progress-${item.id}`}>
-                <ProgressRing percent={prog?.best_percent ?? 0} size={44} strokeWidth={4} />
-                <Text style={styles.progressCaption} numberOfLines={1}>
-                  {prog ? `${tr("best_label", lang)} ${Math.round(prog.best_percent)}%` : tr("not_started", lang)}
-                </Text>
-              </View>
-            </Pressable>
-          );
-        }}
-        ListEmptyComponent={
-          isLoading ? (
-            <ActivityIndicator color={colors.brand} />
-          ) : error ? (
-            <View style={{ alignItems: "center", padding: spacing.xl }}>
-              <Text style={{ color: colors.error }}>{tr("failed", lang)}</Text>
-              <Pressable onPress={() => refetch()} style={styles.retry} testID="dashboard-retry">
-                <Text style={{ color: colors.onBrand, fontWeight: "600" }}>{tr("retry", lang)}</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.dailyTitle}>{tr("daily_practice", lang)}</Text>
+                  <Text style={styles.dailySub}>{tr("daily_practice_sub", lang)}</Text>
+                  {dailyQ.data?.completed && (
+                    <Text testID="daily-completed-badge" style={styles.dailyDone}>
+                      {tr("completed_today", lang)} • {Math.round(dailyQ.data.percent ?? 0)}%
+                    </Text>
+                  )}
+                </View>
+                <Feather name="chevron-right" size={20} color={colors.onBrand} />
               </Pressable>
             </View>
-          ) : null
-        }
-      />
+          }
+          renderItem={({ item }) => {
+            const prog = progressMap[item.id];
+            return (
+              <Pressable
+                testID={`chapter-card-${item.id}`}
+                style={styles.card}
+                onPress={() => router.push(`/chapter/${item.id}`)}
+              >
+                <View style={styles.iconWrap}>
+                  <Feather name={ICON_MAP[item.icon] || "book"} size={24} color={colors.brand} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.cardTitle}>
+                    {lang === "en" ? item.name_en : item.name_hi}
+                  </Text>
+                  <Text style={styles.cardDesc} numberOfLines={2}>
+                    {lang === "en" ? item.description_en : item.description_hi}
+                  </Text>
+                  <View style={styles.metaRow}>
+                    <Feather name="list" size={12} color={colors.muted} />
+                    <Text style={styles.meta}>
+                      {item.question_count} {tr("questions_count", lang)}
+                    </Text>
+                  </View>
+                </View>
+                <View style={styles.progressCol} testID={`progress-${item.id}`}>
+                  <ProgressRing percent={prog?.best_percent ?? 0} size={44} strokeWidth={4} />
+                  <Text style={styles.progressCaption} numberOfLines={1}>
+                    {prog ? `${tr("best_label", lang)} ${Math.round(prog.best_percent)}%` : tr("not_started", lang)}
+                  </Text>
+                </View>
+              </Pressable>
+            );
+          }}
+          ListEmptyComponent={
+            isLoading ? (
+              <ActivityIndicator color={colors.brand} />
+            ) : error ? (
+              <View style={{ alignItems: "center", padding: spacing.xl }}>
+                <Text style={{ color: colors.error }}>{tr("failed", lang)}</Text>
+                <Pressable onPress={() => refetch()} style={styles.retry} testID="dashboard-retry">
+                  <Text style={{ color: colors.onBrand, fontWeight: "600" }}>{tr("retry", lang)}</Text>
+                </Pressable>
+              </View>
+            ) : null
+          }
+        />
+      ) : (
+        <FlatList
+          data={aecListData}
+          keyExtractor={(item) => item.key}
+          contentContainerStyle={{ padding: spacing.xl, paddingBottom: insets.bottom + spacing.xxl }}
+          ListHeaderComponent={
+            <View style={{ marginBottom: spacing.xl }}>
+              <Text style={styles.eyebrow}>AEC • अनिवार्य योग्यता-वर्धन पाठ्यक्रम</Text>
+              <Text testID="aec-dashboard-title" style={styles.title}>हिंदी व्याकरण एवं रचना</Text>
+              <View style={styles.statRow}>
+                <View style={styles.statChip}>
+                  <Text style={styles.statNum}>{aecStatsQ.data?.topics ?? 25}</Text>
+                  <Text style={styles.statLbl}>विषय</Text>
+                </View>
+                <View style={styles.statChip}>
+                  <Text style={styles.statNum}>{aecStatsQ.data?.mcqs ?? 0}</Text>
+                  <Text style={styles.statLbl}>प्रश्न</Text>
+                </View>
+              </View>
+            </View>
+          }
+          renderItem={({ item }) => {
+            if (item.kind === "header") {
+              return <Text style={styles.unitHeader}>{item.title}</Text>;
+            }
+            const topic = item.data;
+            return (
+              <Pressable
+                testID={`aec-topic-card-${topic.slug}`}
+                style={styles.card}
+                onPress={() => router.push(`/aec/topic/${topic.slug}`)}
+              >
+                <View style={styles.iconWrap}>
+                  <Feather name={AEC_ICON_MAP[topic.icon ?? ""] || "file-text"} size={22} color={colors.brand} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.cardTitle}>{topic.title}</Text>
+                  <Text style={styles.cardDesc} numberOfLines={2}>{topic.subtitle}</Text>
+                  <View style={styles.metaRow}>
+                    <Feather name="list" size={12} color={colors.muted} />
+                    <Text style={styles.meta}>{topic.question_count} प्रश्न</Text>
+                  </View>
+                </View>
+                <Feather name="chevron-right" size={20} color={colors.muted} />
+              </Pressable>
+            );
+          }}
+          ListEmptyComponent={
+            aecTopicsQ.isLoading ? (
+              <ActivityIndicator color={colors.brand} />
+            ) : aecTopicsQ.error ? (
+              <View style={{ alignItems: "center", padding: spacing.xl }}>
+                <Text style={{ color: colors.error }}>{tr("failed", lang)}</Text>
+                <Pressable onPress={() => aecTopicsQ.refetch()} style={styles.retry} testID="aec-dashboard-retry">
+                  <Text style={{ color: colors.onBrand, fontWeight: "600" }}>{tr("retry", lang)}</Text>
+                </Pressable>
+              </View>
+            ) : null
+          }
+        />
+      )}
     </View>
   );
 }
@@ -197,6 +328,21 @@ const styles = StyleSheet.create({
   },
   eyebrow: { color: colors.muted, fontSize: 11, letterSpacing: 2, fontWeight: "700" },
   title: { fontSize: 30, lineHeight: 36, color: colors.onSurface, fontWeight: "700", marginTop: 4 },
+  courseTabRow: {
+    flexDirection: "row", marginHorizontal: spacing.xl, marginTop: spacing.md,
+    backgroundColor: colors.surfaceTertiary, borderRadius: radius.pill, padding: 4,
+  },
+  courseTab: {
+    flex: 1, alignItems: "center", justifyContent: "center",
+    paddingVertical: 10, borderRadius: radius.pill,
+  },
+  courseTabActive: { backgroundColor: colors.brand },
+  courseTabText: { color: colors.onSurface, fontWeight: "600", fontSize: 13 },
+  courseTabTextActive: { color: colors.onBrand },
+  unitHeader: {
+    color: colors.brand, fontSize: 12, fontWeight: "700", letterSpacing: 1,
+    marginTop: spacing.lg, marginBottom: spacing.sm,
+  },
   statRow: { flexDirection: "row", gap: spacing.md, marginTop: spacing.lg },
   statChip: {
     backgroundColor: colors.surfaceTertiary, paddingHorizontal: 16, paddingVertical: 10,

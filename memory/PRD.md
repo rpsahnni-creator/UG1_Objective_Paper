@@ -41,6 +41,29 @@ A bilingual (English + Hindi) mobile app for the FYUGP Semester-I SEC paper
 - `/api/daily-practice/status` (GET, auth) — whether the logged-in user completed today's set + score
 - MCQs & study material seeded on startup; LLM top-up via `seed_more.py`.
 
+## Second course: AEC हिंदी व्याकरण (this session)
+- Dashboard now has a top segmented switcher: **SEC • कंप्यूटर** (existing, unchanged) and
+  **AEC • हिंदी** (new) — `testID="course-tab-sec"` / `"course-tab-aec"`.
+- AEC content is ported **unmodified** from the user-supplied reference zip `aec_hindi_app-main`
+  (originally a separate React web app with its own Google-login/Razorpay paid-access model —
+  NOT reused; AEC content now sits under the SAME free admin/guest access as SEC).
+  - 25 topics (13 unit1 "पत्र-लेखन व निबंध" + 12 unit2 "व्याकरण व रचना"),
+    457 MCQs, 25 short-answer + 25 descriptive practice questions (short/descriptive seeded in
+    `db.aec_questions` but no reader UI built yet — future enhancement).
+  - Source files copied as-is into `backend/content/aec_grammar.py`, `aec_writing.py`,
+    `aec_question_bank.py`, `aec_syllabus.py` (only import paths adjusted, no content edits).
+  - AEC MCQs live in the **same shared** `mcqs` Mongo collection as SEC (chapter_id = topic slug,
+    e.g. `sandhi`, `samas`, `anaupcharik-patra`) with bilingual fields duplicated Hindi→English
+    (subject is inherently Hindi-only) — this means the **existing** quiz engine
+    (`/api/chapters/{id}/mcqs`, `/api/quiz/submit`, `app/quiz/[id].tsx`, `quiz-result.tsx`) works
+    for AEC topics with ZERO code changes.
+  - New endpoints: `GET /api/aec/topics?unit=`, `GET /api/aec/topics/{slug}`,
+    `GET /api/aec/syllabus`, `GET /api/aec/stats`.
+  - New screens: `app/aec/topic/[slug].tsx` (rich-content reader using
+    `src/components/AecBlockRenderer.tsx` — renders paragraph/definition/tip/highlight/example/
+    points/numbered/table block kinds) + Start Quiz CTA.
+  - No language toggle on AEC screens (content is Hindi-only by subject nature).
+
 ## Feature additions (this session)
 - **Chapter Progress Ring**: SVG ring (`react-native-svg`, `src/components/ProgressRing.tsx`) on each
   dashboard chapter card showing best score %, with "Not started" / "Best X%" caption.

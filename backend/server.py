@@ -20,6 +20,10 @@ sys.path.insert(0, str(ROOT_DIR))
 
 from content.study_material import STUDY_MATERIAL  # noqa: E402
 from content.mcq_bank import MCQS  # noqa: E402
+from content.aec_writing import TOPICS as AEC_WRITING_TOPICS  # noqa: E402
+from content.aec_grammar import TOPICS as AEC_GRAMMAR_TOPICS  # noqa: E402
+from content.aec_question_bank import MCQS as AEC_MCQS, SHORTS as AEC_SHORTS, DESCRIPTIVES as AEC_DESCRIPTIVES  # noqa: E402
+from content.aec_syllabus import OBJECTIVES as AEC_OBJECTIVES, OUTCOMES as AEC_OUTCOMES, REFERENCES as AEC_REFERENCES  # noqa: E402
 
 MONGO_URL = os.environ["MONGO_URL"]
 DB_NAME = os.environ["DB_NAME"]
@@ -143,6 +147,68 @@ class DailyStatusOut(BaseModel):
     total: Optional[int] = None
 
 
+class AecBlock(BaseModel):
+    kind: str
+    text: Optional[str] = None
+    heading: Optional[str] = None
+    items: Optional[List[str]] = None
+    headers: Optional[List[str]] = None
+    rows: Optional[List[List[str]]] = None
+
+
+class AecSection(BaseModel):
+    heading: str
+    blocks: List[AecBlock]
+
+
+class AecTopicSummary(BaseModel):
+    slug: str
+    unit: int
+    title: str
+    subtitle: str
+    icon: Optional[str] = None
+    order: Optional[int] = None
+    question_count: int = 0
+
+
+class AecTopicOut(AecTopicSummary):
+    tags: Optional[List[str]] = []
+    sections: List[AecSection]
+
+
+class AecQuestionOut(BaseModel):
+    id: str
+    qtype: str
+    topic_slug: str
+    unit: int
+    question: str
+    options: Optional[List[str]] = None
+    answer_index: Optional[int] = None
+    explanation: Optional[str] = None
+    answer: Optional[str] = None
+    marks: int
+
+
+class AecUnitInfo(BaseModel):
+    unit: int
+    title: str
+    topic_count: int
+
+
+class AecSyllabusOut(BaseModel):
+    objectives: List[str]
+    outcomes: List[str]
+    units: List[AecUnitInfo]
+    references: List[str]
+
+
+class AecStatsOut(BaseModel):
+    topics: int
+    mcqs: int
+    shorts: int
+    descriptives: int
+
+
 # -------- Chapter metadata --------
 CHAPTERS_META = {
     "unit1": {
@@ -168,6 +234,9 @@ CHAPTERS_META = {
     },
 }
 
+AEC_TOPICS = AEC_WRITING_TOPICS + AEC_GRAMMAR_TOPICS
+AEC_UNIT_TITLES = {1: "पत्र लेखन एवं निबंध", 2: "हिंदी व्याकरण और रचना"}
+
 
 # -------- Startup: seed MCQs & study material --------
 @app.on_event("startup")
@@ -179,7 +248,7 @@ async def startup():
         )
     # MCQs: seed only once (keep stable ids via a PER-CHAPTER counter so ids
     # never collide across chapters even if the content list order changes)
-    if await db.mcqs.count_documents({}) == 0:
+    if await db.mcqs.count_documents({"chapter_id": {"$in": list(CHAPTERS_META.keys())}}) == 0:
         docs = []
         counters: dict = {}
         for q in MCQS:
@@ -191,6 +260,37 @@ async def startup():
         if docs:
             await db.mcqs.insert_many(docs)
         logging.info(f"Seeded {len(docs)} MCQs")
+
+    # AEC topics (idempotent upsert — static code content, always kept in sync)
+    for t in AEC_TOPICS:
+        doc = dict(t)
+        doc["id"] = doc["slug"]
+        await db.aec_topics.update_one({"slug": doc["slug"]}, {"$set": doc}, upsert=True)
+
+    # AEC MCQs: stored in the SAME shared `mcqs` collection (chapter_id = topic slug)
+    # with bilingual fields duplicated Hindi->English (subject is Hindi-only), so the
+    # existing quiz engine (/api/chapters/{id}/mcqs + /api/quiz/submit) works unchanged.
+    for q in AEC_MCQS:
+        doc = {
+            "id": q["id"],
+            "chapter_id": q["topic_slug"],
+            "question_en": q["question"],
+            "question_hi": q["question"],
+            "options_en": q["options"],
+            "options_hi": q["options"],
+            "answer_index": q["answer_index"],
+            "explanation_en": q.get("explanation") or "",
+            "explanation_hi": q.get("explanation") or "",
+            "difficulty": "medium",
+        }
+        await db.mcqs.update_one({"id": doc["id"]}, {"$set": doc}, upsert=True)
+
+    # AEC short-answer & descriptive practice questions (separate collection, own screens later)
+    for q in AEC_SHORTS + AEC_DESCRIPTIVES:
+        await db.aec_questions.update_one({"id": q["id"]}, {"$set": q}, upsert=True)
+
+    logging.info(f"Upserted {len(AEC_TOPICS)} AEC topics, {len(AEC_MCQS)} AEC MCQs, "
+                 f"{len(AEC_SHORTS) + len(AEC_DESCRIPTIVES)} AEC short/descriptive Qs")
 
 
 # -------- Auth helpers --------
@@ -419,6 +519,54 @@ async def daily_practice_status(user: dict = Depends(current_user)):
         return DailyStatusOut(date=date_str, completed=False)
     d = doc[0]
     return DailyStatusOut(date=date_str, completed=True, percent=d["percent"], correct=d["correct"], total=d["total"])
+
+
+# -------- AEC Hindi Grammar course --------
+@api.get("/aec/topics", response_model=List[AecTopicSummary])
+async def aec_list_topics(unit: Optional[int] = None):
+    query = {"unit": unit} if unit else {}
+    docs = await db.aec_topics.find(query, {"_id": 0}).sort("order", 1).to_list(length=1000)
+    out = []
+    for d in docs:
+        qc = await db.mcqs.count_documents({"chapter_id": d["slug"]})
+        out.append(AecTopicSummary(
+            slug=d["slug"], unit=d["unit"], title=d["title"], subtitle=d["subtitle"],
+            icon=d.get("icon"), order=d.get("order"), question_count=qc,
+        ))
+    return out
+
+
+@api.get("/aec/topics/{slug}", response_model=AecTopicOut)
+async def aec_get_topic(slug: str):
+    d = await db.aec_topics.find_one({"slug": slug}, {"_id": 0})
+    if not d:
+        raise HTTPException(status_code=404, detail="Topic not found")
+    qc = await db.mcqs.count_documents({"chapter_id": slug})
+    return AecTopicOut(
+        slug=d["slug"], unit=d["unit"], title=d["title"], subtitle=d["subtitle"],
+        icon=d.get("icon"), order=d.get("order"), tags=d.get("tags", []),
+        sections=d.get("sections", []), question_count=qc,
+    )
+
+
+@api.get("/aec/syllabus", response_model=AecSyllabusOut)
+async def aec_syllabus():
+    units = []
+    for u in (1, 2):
+        count = await db.aec_topics.count_documents({"unit": u})
+        units.append(AecUnitInfo(unit=u, title=AEC_UNIT_TITLES[u], topic_count=count))
+    return AecSyllabusOut(
+        objectives=AEC_OBJECTIVES, outcomes=AEC_OUTCOMES, units=units, references=AEC_REFERENCES,
+    )
+
+
+@api.get("/aec/stats", response_model=AecStatsOut)
+async def aec_stats():
+    topics = await db.aec_topics.count_documents({})
+    mcqs = await db.mcqs.count_documents({"chapter_id": {"$nin": list(CHAPTERS_META.keys()) + ["daily"]}})
+    shorts = await db.aec_questions.count_documents({"qtype": "short"})
+    descriptives = await db.aec_questions.count_documents({"qtype": "descriptive"})
+    return AecStatsOut(topics=topics, mcqs=mcqs, shorts=shorts, descriptives=descriptives)
 
 
 app.include_router(api)
