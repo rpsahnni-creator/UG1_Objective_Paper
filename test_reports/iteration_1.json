@@ -1,0 +1,37 @@
+{
+  "summary": "Full-stack testing of Introduction to Computer & IT (Expo + FastAPI) PASSED. Backend: 17/17 pytest cases passed (health, auth login/guest/me, chapters list=3 with 171/199/283 MCQ counts totaling 653, bilingual study material for unit1-3, bilingual MCQ structure with 4 options & answer_index, quiz submit returns total/correct/wrong/percent + details). Frontend (mobile viewport 390x844): Welcome screen renders bilingual title + Student/Admin buttons + A/अ lang toggle; toggle switches EN→HI (title changes from 'Introduction to Computer & IT' to 'कंप्यूटर व IT का परिचय'); Student Access logs in as guest and navigates to /dashboard showing 3 chapter cards (unit1/unit2/unit3) and totals 3 Chapters / 653 Questions; Admin login with kijitechnology@gmail.com/admin@123 navigates to /dashboard with 'Admin' badge visible; chapter card opens /chapter/unit1 with Study Material + MCQ Quiz tabs; Start Quiz opens /quiz/unit1, option selection highlights and shows bilingual explanation card, Next advances to next question. No deprecated Expo packages (expo-av/barcode-scanner/background-fetch) detected. No React Native red screen. All text is wrapped in Text components.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_api.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "(Nit, non-blocking) In /app/frontend/app/index.tsx lines 22-25, the auto-redirect uses `setTimeout(() => router.replace('/dashboard'), 0)` executed inline during render. This is a side-effect in render body (React anti-pattern) and may cause duplicate navigation on re-renders. Move the redirect into a useEffect that depends on [ready, session]."
+  ],
+  "critical_code_review_comments": [
+    "server.py uses @app.on_event('startup') which is deprecated in FastAPI; prefer lifespan handlers. Non-blocking.",
+    "/app/frontend/app/index.tsx: side-effect (setTimeout + router.replace) called during render; should be inside useEffect."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_api.py (new)",
+    "/app/test_reports/pytest/pytest_results.xml (new)"
+  ],
+  "success_rate": {
+    "backend": "100% (17/17)",
+    "frontend": "100% (welcome, lang toggle, guest login, dashboard, admin login + badge, chapter detail with tabs, quiz option + explanation + next)"
+  },
+  "seed_data_creation": "None. MCQ bank (653 Qs) and study material are seeded by backend startup from static Python modules; verified via /api/chapters question_count = 171/199/283.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Backend tests live in /app/backend/tests/test_api.py. Run with: EXPO_PUBLIC_BACKEND_URL=$(grep EXPO_PUBLIC_BACKEND_URL /app/frontend/.env | cut -d= -f2) pytest /app/backend/tests/test_api.py -v. Frontend base URL from frontend/.env is https://it-course-app.preview.emergentagent.com (not the UUID preview URL mentioned in the request). All interactive elements expose testIDs: welcome-title, student-access-btn, admin-access-btn, lang-toggle, dashboard-title, logout-btn, chapter-card-<unit>, back-btn, chapter-title, tab-study, tab-quiz, start-quiz-btn, question-text, option-0..3, explanation-card, next-btn, admin-username, admin-password, login-submit-btn, result-title, result-percent, back-to-chapters-btn.",
+  "rca_of_issue": "N/A — no bugs reproduced."
+}

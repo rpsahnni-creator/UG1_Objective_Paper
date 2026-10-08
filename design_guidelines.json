@@ -1,0 +1,175 @@
+{
+  "app_name": "FYUGP Computer IT",
+  "personality": "3 Editorial Mobile LIGHT",
+  "personality_one_liner": "An authoritative, calm, and highly readable academic experience that respects the student's focus across both Hindi and English.",
+  "color": {
+    "surface": "#FDFBF7",
+    "onSurface": "#1A1A18",
+    "surfaceSecondary": "#FFFFFF",
+    "onSurfaceSecondary": "#1A1A18",
+    "surfaceTertiary": "#F2EFE9",
+    "onSurfaceTertiary": "#1A1A18",
+    "surfaceInverse": "#2C2C2A",
+    "onSurfaceInverse": "#FDFBF7",
+    "brand": "#8C3B32",
+    "onBrand": "#FFFFFF",
+    "brandPrimary": "#8C3B32",
+    "onBrandPrimary": "#FFFFFF",
+    "brandSecondary": "#C98276",
+    "onBrandSecondary": "#1A1A18",
+    "brandTertiary": "#EADCD9",
+    "onBrandTertiary": "#8C3B32",
+    "success": "#4A7856",
+    "onSuccess": "#FFFFFF",
+    "warning": "#D49E4A",
+    "onWarning": "#1A1A18",
+    "error": "#B04A45",
+    "onError": "#FFFFFF",
+    "info": "#5C7582",
+    "onInfo": "#FFFFFF",
+    "border": "#E6E2D8",
+    "borderStrong": "#C2BCAC",
+    "divider": "#E6E2D8",
+    "muted": "#666660"
+  },
+  "typography": {
+    "displayFontFamily": "Playfair Display",
+    "textFontFamily": "Plus Jakarta Sans",
+    "scale": {
+      "sm": 12,
+      "base": 14,
+      "lg": 16,
+      "xl": 20,
+      "2xl": 24
+    }
+  },
+  "spacing": {
+    "rule": "Use generous magazine-like spacing to give breathing room, especially for bilingual text which can be dense.",
+    "xs": 4,
+    "sm": 8,
+    "md": 12,
+    "lg": 16,
+    "xl": 24,
+    "2xl": 32,
+    "3xl": 48
+  },
+  "radius_tokens": {
+    "sm": 6,
+    "md": 12,
+    "lg": 20,
+    "pill": 999
+  },
+  "shadow_tier": "0",
+  "navigation": "stack_only",
+  "icon_set": "Feather",
+  "glassmorphism": {
+    "enabled": false,
+    "do's": [],
+    "dont's": [
+      "Avoid glassmorphism entirely to maintain the Editorial, paper-like academic feel."
+    ]
+  },
+  "platform_libraries": {
+    "glass": {
+      "ios": "expo-glass-effect",
+      "android": "expo-blur",
+      "low_end_android_fallback": "solid surfaceSecondary"
+    },
+    "image": "expo-image",
+    "blur": "expo-blur",
+    "bottom_sheet": "@gorhom/bottom-sheet",
+    "animation": "react-native-reanimated",
+    "gesture": "react-native-gesture-handler"
+  },
+  "screens": [
+    {
+      "name": "Welcome",
+      "purpose": "Introduce the course with an academic aesthetic and provide entry points for Students and Admin.",
+      "states": {
+        "loading": "Centered spinner on surface canvas.",
+        "empty": "N/A",
+        "error": "N/A"
+      },
+      "layout": "Full-bleed background image with top-to-bottom gradient scrim (transparent to ≥70% surfaceInverse). Display title 'Introduction to Computer & IT' in large serif typography at the bottom 40%, followed by two primary buttons: 'Student Login' and 'Admin Access'. Floating pill button at the top right for Language Toggle (A/अ)."
+    },
+    {
+      "name": "AdminLogin",
+      "purpose": "A simple, distraction-free gateway for administrators to access all content without cost.",
+      "states": {
+        "loading": "Spinner on the login button.",
+        "empty": "N/A",
+        "error": "Inline red text below the input field + shake animation."
+      },
+      "layout": "Standard single-column form centered vertically. Serif header, clean sans-serif inputs for Username and Password. Sticky 'Login' CTA button above the keyboard. Language toggle top right."
+    },
+    {
+      "name": "Dashboard",
+      "purpose": "Provide a structured overview of the 3 Units (Chapters) and track overall course progress.",
+      "states": {
+        "loading": "Skeleton list of large cards.",
+        "empty": "N/A - Data is static/bundled.",
+        "error": "Centered 'Failed to load course data' with Retry button."
+      },
+      "layout": "Editorial layout: Generous top padding. A prominent header showing 'Course Overview' and a progress ring. Below, a vertical stack of large, full-width cards for UNIT-I, UNIT-II, and UNIT-III. Each card has a tinted icon (brandTertiary bg), the bilingual title, and a subtle progress bar. Language toggle pill in the header."
+    },
+    {
+      "name": "ChapterDetail",
+      "purpose": "Act as the hub for a specific unit, offering distinct paths to Study Material and MCQs.",
+      "states": {
+        "loading": "Skeleton view of the tabs and summary.",
+        "empty": "N/A",
+        "error": "Centered 'Failed to load chapter' with Retry button."
+      },
+      "layout": "Large serif title at the top. Use a custom segmented control (tab switcher) for 'Study Material' vs 'MCQ Quiz'. Below the tabs, render the respective content. For Study Material: a list of topics. For MCQ: a summary card showing total questions (e.g., 500) and a 'Start Quiz' sticky CTA at the bottom. Language toggle top right."
+    },
+    {
+      "name": "StudyMaterialReader",
+      "purpose": "Provide a highly readable, distraction-free environment for consuming long-form bilingual educational content.",
+      "states": {
+        "loading": "Skeleton text lines.",
+        "empty": "N/A",
+        "error": "Centered error message with Retry button."
+      },
+      "layout": "'Invisible Interface' paradigm. Hide heavy navigation. Content uses Editorial spacing (xl/2xl margins, 1.5x line height). English text in Plus Jakarta Sans, Hindi text falls back to clean system Devanagari. Use borders instead of shadows for inline callouts. Language toggle top right (or sticky at bottom right)."
+    },
+    {
+      "name": "Quiz",
+      "purpose": "Deliver MCQs with a focus on clarity, large touch targets, and immediate educational feedback.",
+      "states": {
+        "loading": "Skeleton question card.",
+        "empty": "N/A",
+        "error": "Centered error message with Retry button."
+      },
+      "layout": "Top persistent progress bar (e.g., Q 1/50). Large serif typography for the question. Vertical stack of full-width option tiles (surfaceSecondary with border, turning to brandPrimary on select). After selection, show a 'bottom sheet' or inline tinted card (brandTertiary) explaining the concept in both languages. Sticky 'Next' button at the bottom."
+    },
+    {
+      "name": "QuizResult",
+      "purpose": "Summarize the student's performance and provide a clear path to review or return.",
+      "states": {
+        "loading": "Spinner.",
+        "empty": "N/A",
+        "error": "N/A"
+      },
+      "layout": "Large, bold score metric centered at the top. Below, a breakdown of Correct/Wrong answers. A list of reviewed questions can be scrolled below. Sticky primary CTA 'Back to Chapters' at the bottom. The layout should feel like a formal academic report (Editorial style)."
+    }
+  ],
+  "images": {
+    "welcome_hero": {
+      "url": "https://images.unsplash.com/photo-1528759094033-e86a2379be5f?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2Njl8MHwxfHNlYXJjaHwxfHx1bml2ZXJzaXR5JTIwY2FtcHVzJTIwYnVpbGRpbmclMjBhYnN0cmFjdHxlbnwwfHx8fDE3OTE0MzE2Njd8MA&ixlib=rb-4.1.0&q=85",
+      "alt": "Abstract structural shot of a university building"
+    },
+    "course_abstract_banner": {
+      "url": "https://images.unsplash.com/photo-1697033300784-6c9d143a30e2?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDQ2NDN8MHwxfHNlYXJjaHwxfHxjb21wdXRlciUyMHNjaWVuY2UlMjBjb2xsZWdlJTIwYm9vayUyMGNvdmVyJTIwYWJzdHJhY3R8ZW58MHx8fHwxNzkxNDMxNjY3fDA&ixlib=rb-4.1.0&q=85",
+      "alt": "Colorful abstract background representing computer science"
+    }
+  },
+  "instructions_to_main_agent": [
+    "CRITICAL: The app must deeply support bilingual content (English and Hindi). Implement a robust React Context for language state that toggles between 'en' and 'hi'. Every text node must read from this context.",
+    "Place a persistent Language Toggle button (e.g., a pill showing 'A / अ') in the top right header of EVERY screen to meet the user's specific requirement.",
+    "Typography is key for the 'Editorial' personality. Use 'Playfair Display' for all main headings to give an authoritative academic feel, and 'Plus Jakarta Sans' for English body text. Ensure Hindi text renders cleanly (React Native will use the system default Devanagari font, which is fine, but ensure line heights are generous—1.5x minimum—to prevent Devanagari matras from clipping).",
+    "Admin Login: Hardcode a simple username/password check for the MVP to allow free access to all content, bypassing any locked states.",
+    "Quiz Design: Do not use generic alerts for right/wrong answers. Use inline expansion or a bottom sheet that shows the concept/explanation in both languages AFTER an option is selected. This is an educational app, so the 'concept ke sath' (with concept) requirement is crucial.",
+    "Do NOT use any blue, purple, or indigo colors. Stick to the provided terracotta ('brand': '#8C3B32') and paper-white ('surface': '#FDFBF7') palette to maintain the unique Editorial feel.",
+    "No glassmorphism. Use crisp 1px borders (#E6E2D8) and solid paper-colored surfaces to separate content."
+  ]
+}
